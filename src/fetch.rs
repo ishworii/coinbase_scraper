@@ -4,6 +4,8 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use chrono::Utc;
+use futures::future::join_all;
+use tokio::time::{sleep, Duration};
 
 use crate::model::CoinRow;
 
@@ -25,6 +27,58 @@ pub async fn scrape_coins(pages: u32) -> Result<Vec<CoinRow>> {
             if seen.insert(r.id) {
                 rows.push(r);
             }
+        }
+    }
+
+    rows.sort_by_key(|r| r.rank.unwrap_or(u64::MAX));
+    Ok(rows)
+}
+
+pub async fn scrape_coins_concurrent(pages: u32, batch_size: u32, pause_ms: u64) -> Result<Vec<CoinRow>> {
+    let mut seen = HashSet::new();
+    let mut rows = Vec::new();
+    let scraped_at = Utc::now();
+
+    let page_numbers: Vec<u32> = (1..=pages).collect();
+    
+    for chunk in page_numbers.chunks(batch_size as usize) {
+        let tasks: Vec<_> = chunk.iter()
+            .map(|&page| {
+                let scraped_at = scraped_at;
+                tokio::spawn(async move {
+                    let url = if page == 1 {
+                        "https://coinmarketcap.com/".to_string()
+                    } else {
+                        format!("https://coinmarketcap.com/?page={page}")
+                    };
+                    
+                    let html = fetch_html(&url).await
+                        .with_context(|| format!("Failed to fetch page {}", page))?;
+                    
+                    extract_home_coins(&html, scraped_at)
+                        .with_context(|| format!("Failed to parse page {}", page))
+                })
+            })
+            .collect();
+
+        let results = join_all(tasks).await;
+        
+        for res in results {
+            match res {
+                Ok(Ok(page_rows)) => {
+                    for r in page_rows {
+                        if seen.insert(r.id) {
+                            rows.push(r);
+                        }
+                    }
+                }
+                Ok(Err(e)) => eprintln!("Scrape error: {}", e),
+                Err(e) => eprintln!("Task join error: {}", e),
+            }
+        }
+
+        if chunk.len() < page_numbers.len() {
+            sleep(Duration::from_millis(pause_ms)).await;
         }
     }
 
