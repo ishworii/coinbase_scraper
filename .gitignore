@@ -114,3 +114,4 @@ lcov.info
 .claude/
 .idea/
 *.db
+python_benchmark/.venv/
