@@ -4,3 +4,4 @@
 *.txt
 .claude/
 .idea/
+*.db

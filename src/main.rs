@@ -1,39 +1,59 @@
 use anyhow::Result;
-use coinbase_scraper::{scrape_coins, scrape_coins_concurrent, save_to_csv, generate_filename};
+use coinbase_scraper::{scrape_coins_concurrent, Database};
 use std::time::Instant;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let pages = 20;
     
-    // Test sequential
-    println!("=== Sequential Performance Test ===");
-    println!("Scraping {} pages sequentially...", pages);
+    // Initialize database
+    println!("=== Database Setup ===");
+    let db = Database::new("sqlite:cmc.db").await?;
+    
+    // Scrape data concurrently
+    println!("\n=== Scraping Data ===");
+    println!("Scraping {} pages concurrently...", pages);
     let start = Instant::now();
-    let sequential_rows = scrape_coins(pages).await?;
-    let sequential_duration = start.elapsed();
+    let rows = scrape_coins_concurrent(pages, 10, 300).await?;
+    let scrape_duration = start.elapsed();
     
-    println!("Sequential: {:.2}s for {} coins", 
-             sequential_duration.as_secs_f64(), 
-             sequential_rows.len());
+    println!("Scraped {} coins in {:.2}s", rows.len(), scrape_duration.as_secs_f64());
     
-    // Test concurrent with batch size 10, 300ms pause (more aggressive)
-    println!("\n=== Concurrent Performance Test ===");
-    println!("Scraping {} pages concurrently (batch_size=10, pause=300ms)...", pages);
+    // Save to database
+    println!("\n=== Database Storage ===");
     let start = Instant::now();
-    let concurrent_rows = scrape_coins_concurrent(pages, 10, 300).await?;
-    let concurrent_duration = start.elapsed();
+    db.save_coins(&rows).await?;
+    let db_duration = start.elapsed();
     
-    println!("Concurrent: {:.2}s for {} coins", 
-             concurrent_duration.as_secs_f64(), 
-             concurrent_rows.len());
+    println!("Saved {} coins to database in {:.3}s", rows.len(), db_duration.as_secs_f64());
     
-    // Performance comparison
-    let speedup = sequential_duration.as_secs_f64() / concurrent_duration.as_secs_f64();
-    println!("\nSpeedup: {:.2}x faster", speedup);
+    // Get database stats
+    let total_snapshots = db.get_snapshot_count().await?;
+    println!("Total snapshots in database: {}", total_snapshots);
     
-    // Use the concurrent results for display and CSV
-    let rows = concurrent_rows;
+    // Demo: Show latest top 10 from database
+    println!("\n=== Latest Top 10 from Database ===");
+    let latest_coins = db.get_latest_coins(10).await?;
+    for (i, coin) in latest_coins.iter().enumerate() {
+        println!("{:>2}. {} ({}) - ${:.2} ({:+.2}%)", 
+                 i + 1,
+                 coin.name, 
+                 coin.symbol,
+                 coin.price_usd.unwrap_or(0.0),
+                 coin.change_24h.unwrap_or(0.0));
+    }
+    
+    // Demo: Show BTC history if available
+    println!("\n=== BTC Price History ===");
+    let btc_history = db.get_coin_history("BTC").await?;
+    for point in btc_history.iter().take(5) {
+        println!("{}: ${:.2}", 
+                 point.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                 point.price_usd.unwrap_or(0.0));
+    }
+    if btc_history.len() > 5 {
+        println!("... and {} more data points", btc_history.len() - 5);
+    }
 
     println!("{:<5} {:<18} {:<8} {:>14} {:>16} {:>10}", "Rank", "Name", "Symbol", "Price(USD)", "MktCap(USD)", "24h%");
     println!("{}", "-".repeat(80));
@@ -48,10 +68,6 @@ async fn main() -> Result<()> {
             r.chg24h_pct.map(|x| format!("{:+.2}", x)).unwrap_or_else(|| "-".into()),
         );
     }
-
-    let filename = generate_filename();
-    save_to_csv(&rows, &filename)?;
-    println!("\nData saved to: {}", filename);
 
     Ok(())
 }
