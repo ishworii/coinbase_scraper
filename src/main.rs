@@ -1,14 +1,61 @@
 use anyhow::Result;
-use coinbase_scraper::{scrape_coins_concurrent, Database};
+use coinbase_scraper::{scrape_coins_concurrent, Database, start_server};
 use std::time::Instant;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "coinbase_scraper")]
+#[command(about = "A high-performance cryptocurrency data scraper with database storage and REST API")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Scrape cryptocurrency data and save to database
+    Scrape {
+        /// Number of pages to scrape
+        #[arg(short, long, default_value_t = 10)]
+        pages: u32,
+        /// Database path
+        #[arg(short, long, default_value = "sqlite:cmc.db")]
+        db: String,
+    },
+    /// Start the REST API server
+    Serve {
+        /// Port to run the server on
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+        /// Database path
+        #[arg(short, long, default_value = "sqlite:cmc.db")]
+        db: String,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let pages = 20;
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
     
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Scrape { pages, db } => {
+            scrape_command(pages, &db).await?;
+        },
+        Commands::Serve { port, db } => {
+            serve_command(port, &db).await?;
+        },
+    }
+
+    Ok(())
+}
+
+async fn scrape_command(pages: u32, db_url: &str) -> Result<()> {
     // Initialize database
     println!("=== Database Setup ===");
-    let db = Database::new("sqlite:cmc.db").await?;
+    let db = Database::new(db_url).await?;
     
     // Scrape data concurrently
     println!("\n=== Scraping Data ===");
@@ -55,19 +102,15 @@ async fn main() -> Result<()> {
         println!("... and {} more data points", btc_history.len() - 5);
     }
 
-    println!("{:<5} {:<18} {:<8} {:>14} {:>16} {:>10}", "Rank", "Name", "Symbol", "Price(USD)", "MktCap(USD)", "24h%");
-    println!("{}", "-".repeat(80));
-    for r in &rows {
-        println!(
-            "{:<5} {:<18} {:<8} {:>14} {:>16} {:>10}",
-            r.rank.map_or("-".into(), |x| x.to_string()),
-            r.name,
-            r.symbol,
-            r.price_usd.map(|x| format!("{:.2}", x)).unwrap_or_else(|| "-".into()),
-            r.market_cap_usd.map(|x| format!("{:.0}", x)).unwrap_or_else(|| "-".into()),
-            r.chg24h_pct.map(|x| format!("{:+.2}", x)).unwrap_or_else(|| "-".into()),
-        );
-    }
+    Ok(())
+}
 
+async fn serve_command(port: u16, db_url: &str) -> Result<()> {
+    println!("=== Starting API Server ===");
+    let db = Database::new(db_url).await?;
+    
+    println!("Database connected. Starting server...");
+    start_server(db, port).await?;
+    
     Ok(())
 }

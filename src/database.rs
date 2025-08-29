@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::{sqlite::SqlitePool, Row};
 use chrono::{DateTime, Utc};
 
-use crate::model::CoinRow;
+use crate::model::{CoinRow, CoinResponse};
 
 pub struct Database {
     pool: SqlitePool,
@@ -107,6 +107,70 @@ impl Database {
         }
 
         Ok(coins)
+    }
+
+    pub async fn get_latest_coins_api(&self, limit: i64) -> Result<Vec<CoinResponse>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT c.id, c.name, c.symbol, s.cmc_rank, s.price_usd, s.market_cap_usd, s.change_24h, s.ts_utc
+            FROM snapshots s
+            JOIN coins c ON s.coin_id = c.id
+            WHERE s.ts_utc = (SELECT MAX(ts_utc) FROM snapshots)
+            AND s.cmc_rank IS NOT NULL
+            ORDER BY s.cmc_rank ASC
+            LIMIT ?
+            "#
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut coins = Vec::new();
+        for row in rows {
+            let ts_utc: String = row.get("ts_utc");
+            coins.push(CoinResponse {
+                id: row.get::<i64, _>("id") as u64,
+                name: row.get("name"),
+                symbol: row.get("symbol"),
+                rank: row.get::<Option<i64>, _>("cmc_rank").map(|r| r as u64),
+                price_usd: row.get("price_usd"),
+                market_cap_usd: row.get("market_cap_usd"),
+                change_24h: row.get("change_24h"),
+                ts_utc: DateTime::parse_from_rfc3339(&ts_utc)?.with_timezone(&Utc),
+            });
+        }
+
+        Ok(coins)
+    }
+
+    pub async fn get_coin_latest_api(&self, symbol: &str) -> Result<Option<CoinResponse>> {
+        let row = sqlx::query(
+            r#"
+            SELECT c.id, c.name, c.symbol, s.cmc_rank, s.price_usd, s.market_cap_usd, s.change_24h, s.ts_utc
+            FROM snapshots s
+            JOIN coins c ON s.coin_id = c.id
+            WHERE c.symbol = ? AND s.ts_utc = (SELECT MAX(ts_utc) FROM snapshots WHERE coin_id = c.id)
+            "#
+        )
+        .bind(symbol.to_uppercase())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let ts_utc: String = row.get("ts_utc");
+            Ok(Some(CoinResponse {
+                id: row.get::<i64, _>("id") as u64,
+                name: row.get("name"),
+                symbol: row.get("symbol"),
+                rank: row.get::<Option<i64>, _>("cmc_rank").map(|r| r as u64),
+                price_usd: row.get("price_usd"),
+                market_cap_usd: row.get("market_cap_usd"),
+                change_24h: row.get("change_24h"),
+                ts_utc: DateTime::parse_from_rfc3339(&ts_utc)?.with_timezone(&Utc),
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_coin_history(&self, symbol: &str) -> Result<Vec<HistoryPoint>> {
