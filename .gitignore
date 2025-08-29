@@ -1,0 +1,6 @@
+/target
+*.csv
+*.json
+*.txt
+.claude/
+.idea/
