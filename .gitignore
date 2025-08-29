@@ -1,3 +1,112 @@
+# ======================================
+# Rust / Cargo
+# ======================================
+# Build artifacts
+/target/
+**/*.rs.bk
+
+# Debug logs
+cargo-debug.log
+
+# Rust toolchains
+rust-toolchain
+rust-toolchain.toml
+
+# Rustfmt / Clippy backups
+**/*.rs.bk
+
+# ======================================
+# IDE / Editor files
+# ======================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (CLion, IntelliJ, RustRover)
+.idea/
+*.iml
+out/
+
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+# Emacs / Vim
+*~
+\#*\#
+.\#*
+*.swp
+*.swo
+
+# Mac / Linux / Windows noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ======================================
+# OS & Temp files
+# ======================================
+*.tmp
+*.temp
+*.bak
+*.log
+*.lock
+*.aux
+*.out
+
+# ======================================
+# Project-specific
+# ======================================
+# Local databases
+*.db
+*.sqlite
+
+# CSV exports
+*.csv
+
+# Generated reports / profiling
+*.prof
+*.svg
+*.png
+*.pdf
+
+# Credentials / secrets
+.env
+.env.*
+*.key
+*.pem
+*.crt
+
+# ======================================
+# Binaries / Executables
+# ======================================
+*.exe
+*.out
+*.dll
+*.so
+*.dylib
+
+
+# ======================================
+# Node / Frontend
+# ======================================
+node_modules/
+dist/
+build/
+npm-debug.log
+yarn-error.log
+.pnpm-store/
+
+# ======================================
+# Logs & Coverage
+# ======================================
+*.coverage
+coverage/
+lcov.info
+*.profraw
+*.profdata
+
+
 /target
 *.csv
 *.json
